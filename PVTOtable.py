@@ -44,6 +44,8 @@ def curves_intersect(x1, x2, y1, y2):
             if (abs(a1 - a2) < 1e-6):
                 if (abs (b1 - b2) < 1e-6):
                     return True # conicide
+                else:
+                    continue
 
             # intersection
             x = - (b2 - b1) / (a2 - a1)
@@ -68,6 +70,9 @@ class PVTOtable:
 
     # constants
     p_atm = 101325.0/100000.;           # atmospheric
+    min_B_limit = 1e-6
+
+    # simple parameters
     p_max = 0
     p_min = 0
     p_usat_rel_max = 0              # max relative pressure
@@ -79,8 +84,9 @@ class PVTOtable:
         """
         self.readTable_(data)
         # self.convertUnits_()
+        self.checkConsistency_()
         self.makeStandardConditionsBranch_()
-        self.extapolateUSatToMaximumRelativePressure_()
+        self.extrapolateUSatToMaximumRelativePressure_()
         self.checkConsistency_()
 
     def convertUnits_(self):
@@ -118,7 +124,6 @@ class PVTOtable:
 
             # create usat branch;
             self.Rs_usat.insert( 0, 0.0)
-            # self.p_usat.insert( 0, [ 0 ])
             self.p_usat.insert( 0, [ self.p_atm ])
             self.B_usat.insert( 0, [ 1.0 ])
             self.mu_usat.insert( 0, [ mu_atm ])
@@ -171,18 +176,18 @@ class PVTOtable:
             self.p_usat_rel_max = max( self.p_usat_rel_max, max(self.p_usat[i]) - self.p_usat[i][0] )
 
 
-    def extapolateUSatToMaximumRelativePressure_(self):
+    def extrapolateUSatToMaximumRelativePressure_(self):
         """
         extrapolate to the maximum unsaturated pressure:
         I want tables for all rs span the same p_usat range
         """
-        extrapolate_into_sc = False
+        create_sc_branch = False
         for i in range(len(self.p_usat)):
             # only a standard conditions branch previously
             # at this point can have a single value
             # remember that and treat it later
             if (len(self.p_usat[i]) < 2):
-                extrapolate_into_sc = True
+                create_sc_branch = True
             else:
                 if (self.p_usat[i][-1] < self.p_usat[i][0] + self.p_usat_rel_max):
                     # extrapolate linearly the unsaturated properties to the
@@ -196,26 +201,19 @@ class PVTOtable:
                     B.append( B_ext )
                     mu.append( mu_ext )
 
-        # if (extrapolate_into_sc):
-        #     # two closest branches to the SC branch
-        #     p1 = self.p_usat[1][-1]
-        #     p2 = self.p_usat[2][-1]
-        #     rs1 = self.Rs_usat[1]
-        #     rs2 = self.Rs_usat[2]
-        #     B1 = self.B_usat[1][-1]
-        #     B2 = self.B_usat[2][-1]
-        #     mu1 = self.mu_usat[1][-1]
-        #     mu2 = self.mu_usat[2][-1]
-        #     p_ext = self.p_usat[0][0] + self.p_usat_rel_max
-        #     # B_ext = interp_lin( rs1, rs2, B1, B2, self.Rs_usat[0] )
-        #     # B_ext = interp_lin( p1, p2, B1, B2, p_ext )
-        #     # mu_ext = interp_lin( rs1, rs2, mu1, mu2, self.Rs_usat[0] )
-        #     B_ext = 1.5
-            
-        #     mu_ext = interp_log( p1, p2, mu1, mu2, p_ext )
-        #     self.p_usat[0].append( p_ext )
-        #     self.B_usat[0].append( B_ext )
-        #     self.mu_usat[0].append( mu_ext )
+        if (create_sc_branch):
+            # p1 = self.p_usat[1][-1]
+            dp = self.p_usat[1][-1] - self.p_usat[1][-2]
+            dB = self.B_usat[1][-1] - self.B_usat[1][-2]
+            dmu = self.mu_usat[1][-1] - self.mu_usat[1][-2]
+            p_ext = self.p_usat[0][0] + self.p_usat_rel_max
+            B_ext = self.B_usat[0][0] + dB / dp * self.p_usat_rel_max
+            B_ext = max(B_ext, self.min_B_limit)
+            mu_ext = self.mu_usat[0][0] + dmu / dp * self.p_usat_rel_max
+            self.p_usat[0].append(p_ext)
+            self.B_usat[0].append(B_ext)
+            self.mu_usat[0].append(mu_ext)
+
 
     def checkConsistency_(self):
         assert(len(self.p_usat[-1]) > 1), "Unsaturated extra data must be specified for the highest Rs in PVTO"
