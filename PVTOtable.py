@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 import numpy as np
+from enum import Enum
+
 log = np.log
 
 def interp_lin(x1, x2, y1, y2, x):
@@ -54,6 +56,15 @@ def curves_intersect(x1, x2, y1, y2):
     return False
 
 
+class Position(Enum):
+    """
+    to check whether we are between
+    undersaturated branches or out of region
+    """
+    BETWEEN = 1
+    ABOVE = 2
+    BELOW = 3
+
 class PVTOtable:
     # saturated data
     p_bub = np.array(0)
@@ -89,6 +100,96 @@ class PVTOtable:
         self.extrapolateUSatToMaximumRelativePressure_()
         self.checkConsistency_()
 
+
+    def findSurroundingElements(self, value, array, shift = 0):
+        """
+        find surrounding undersaturated branches
+        shift is to search relative pressure
+        """
+        lower = 0
+        for i in range(len(array)):
+            if (array[i] - shift <= value):
+                lower = i
+
+        upper = len(array) - 1
+        for i in range(len(array)-1, -1, -1):
+            if (array[i] - shift > value):
+                upper = i
+
+        if (value <= array[0] - shift):
+            return Position.BELOW, lower, upper
+        elif (value > array[-1] - shift):
+            return Position.ABOVE, lower, upper
+        else:
+            return Position.BETWEEN, lower, upper
+
+    def computeSaturatedPressure_(self, sat_lower, sat_upper, Rs):
+        if (sat_lower < sat_upper):
+            b1 = sat_lower
+            b2 = sat_upper
+            p_sat = (self.p_bub[b2] - self.p_bub[b1]) / \
+                (self.Rs_sat[b2] - self.Rs_sat[b1]) * \
+                (Rs - self.Rs_sat[b1]) + self.p_bub[b1]
+        else: #  lower == upper never >
+            p_sat = self.p_bub[sat_lower]
+        return p_sat
+
+    def getProperty(self, Rs, p, sat_values, usat_values):
+        # find lower and higher rs value indices
+        pos, sat_lower, sat_upper = self.findSurroundingElements(Rs, self.Rs_sat)
+        if (pos != pos.BETWEEN):
+            raise LookupError("out of bounds and extrapolation not supported here")
+        p_rel = p - self.computeSaturatedPressure_(sat_lower, sat_upper, Rs)
+
+        # find undersaturated branches to interpolate between
+        pos, usat_lower, usat_upper = self.findSurroundingElements(Rs, self.Rs_usat)
+        if (pos == Position.BETWEEN):
+            # find usaturated relative pressures to get B values on
+            # each of the under-saturated branches
+            pos1, i11, i12 = self.findSurroundingElements(p_rel, self.p_usat[usat_lower],
+                                                          shift=self.p_usat[usat_lower][0])
+            pos2, i21, i22 = self.findSurroundingElements(p_rel, self.p_usat[usat_upper],
+                                                          shift=self.p_usat[usat_upper][0])
+            assert pos1 == Position.BETWEEN
+            assert pos2 == Position.BETWEEN
+
+            # interpolate on each usat branch to get two Bo values
+            usat_value1 = (usat_values[usat_lower][i12] - usat_values[usat_lower][i11]) / \
+                 (self.p_usat[usat_lower][i12] - self.p_usat[usat_lower][i11]) * \
+                 (p_rel - (self.p_usat[usat_lower][i11] - (self.p_usat[usat_lower][0]))) +\
+                 usat_values[usat_lower][i11]
+
+            usat_value2 = (usat_values[usat_upper][i22] - usat_values[usat_upper][i21]) / \
+                (self.p_usat[usat_upper][i22] - self.p_usat[usat_upper][i21]) * \
+                (p_rel - (self.p_usat[usat_upper][i21] - (self.p_usat[usat_upper][0]))) +\
+                usat_values[usat_upper][i21]
+
+            # NOTE: we should interpolate B wrt Rs between branches since
+            # this causes bad interpolatiopn (trust me i checked)
+            # B = (B2 - B1) / (self.Rs_usat[usat_upper] - self.Rs_usat[usat_lower]) * \
+            #     (Rs - self.Rs_usat[usat_lower]) + B1
+
+            # that's why we interpolate along the saturated B curve
+            # first interpolate B_sat
+            sat_value = (sat_values[sat_upper] - sat_values[sat_lower]) / \
+                    (self.Rs_sat[sat_upper] - self.Rs_sat[sat_lower]) * \
+                    (Rs - self.Rs_sat[sat_lower]) + sat_values[sat_lower]
+
+            # use B_sat as x in interpolation
+            usat_value = (usat_value2 - usat_value1) / \
+                (usat_values[usat_upper][0] - usat_values[usat_lower][0]) * \
+                (sat_value - usat_values[usat_lower][0]) + usat_value1
+
+            return usat_value
+        else:
+            raise LookupError("extrapolation not allowed")
+
+    def getViscosity(self, Rs, p):
+        return self.getProperty(Rs, p, self.mu_sat, self.mu_usat)
+
+    def getVolumeFactor(self, Rs, p):
+        return self.getProperty(Rs, p, self.B_sat, self.B_usat)
+
     def convertUnits_(self):
         # convert pressure from bars to Pa
         self.p_bub = [x*100000. for x in self.p_bub]
@@ -116,8 +217,7 @@ class PVTOtable:
             #          (log(self.p_atm) - log(self.p_bub[1])) + log(self.mu_sat[0])
             # mu_atm = np.exp(log_mu)
 
-            self.Rs_sat.insert( 0, 0 )
-            self.p_bub.insert (0, self.p_atm)  # atmoscpheric
+            self.p_bub.insert (0, self.p_atm)  # atmospheric
             self.Rs_sat.insert(0, 0.0)        # no gas dissolved on surface
             self.B_sat.insert (0, 1.0)        # B on surface = 1 (no gas dissolved)
             self.mu_sat.insert(0, mu_atm)     # B on surface = 1 (no gas dissolved)
