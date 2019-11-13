@@ -1,69 +1,9 @@
 #!/usr/bin/env python
 import numpy as np
-from enum import Enum
+import utils
 
-log = np.log
+Position = utils.Position
 
-def interp_lin(x1, x2, y1, y2, x):
-    """
-    simple linear interpolation
-    y1 and y2 are the function values in the points
-    x1 and x2, respectively
-    x is the point where we want to evaluate the
-    function
-    """
-    return (y2 - y1) / (x2 - x1) * (x - x1) + y1
-
-def interp_log(x1, x2, y1, y2, x):
-    """
-    simple logarithmic interpolation
-    no checks
-    """
-    return np.exp( interp_lin(x1, x2, log(y1), log(y2), x) )
-
-def curves_intersect(x1, x2, y1, y2):
-    """
-    return true if two curves y1 = y1(x1) and y2 = y2(x2)
-    intersect
-    x1, x2, y1, and y2 are all either lists or np arrays
-    """
-    assert(len(x1) == len(y1))
-    assert(len(x2) == len(y2))
-    # split curves into segments : y = a1 x + b1 and y = a2 x + b2
-    # and check all pairs for intersection
-    for i in range(1, len(x1)):
-        # build segment line y = a1 x + b1
-        assert(x1[i] != x1[i-1])
-        a1 = (y1[i] - y1[i-1]) / (x1[i] - x1[i-1])
-        b1 = y1[i] - a1 * x1[i]
-        for j in range(1, len(x2)):
-            # second line : y = a2 x + b2
-            assert(x2[j] != x2[j-1])
-            a2 = (y2[j] - y2[j-1]) / (x2[j] - x2[j-1])
-            b2 = y2[j] - a2 * x2[j]
-
-            # compute intersection
-            if (abs(a1 - a2) < 1e-6):
-                if (abs (b1 - b2) < 1e-6):
-                    return True # conicide
-                else:
-                    continue
-
-            # intersection
-            x = - (b2 - b1) / (a2 - a1)
-            if ( x >= x1[i-1] and x <= x1[i] and x >= x2[j-1] and x <= x2[j]):
-                return True
-    return False
-
-
-class Position(Enum):
-    """
-    to check whether we are between
-    undersaturated branches or out of region
-    """
-    BETWEEN = 1
-    ABOVE = 2
-    BELOW = 3
 
 class PVTOtable:
     # saturated data
@@ -101,28 +41,6 @@ class PVTOtable:
         self.checkConsistency_()
 
 
-    def findSurroundingElements(self, value, array, shift = 0):
-        """
-        find surrounding undersaturated branches
-        shift is to search relative pressure
-        """
-        lower = 0
-        for i in range(len(array)):
-            if (array[i] - shift <= value):
-                lower = i
-
-        upper = len(array) - 1
-        for i in range(len(array)-1, -1, -1):
-            if (array[i] - shift > value):
-                upper = i
-
-        if (value <= array[0] - shift):
-            return Position.BELOW, lower, upper
-        elif (value > array[-1] - shift):
-            return Position.ABOVE, lower, upper
-        else:
-            return Position.BETWEEN, lower, upper
-
     def computeSaturatedPressure_(self, sat_lower, sat_upper, Rs):
         if (sat_lower < sat_upper):
             b1 = sat_lower
@@ -136,19 +54,23 @@ class PVTOtable:
 
     def getProperty(self, Rs, p, sat_values, usat_values):
         # find lower and higher rs value indices
-        pos, sat_lower, sat_upper = self.findSurroundingElements(Rs, self.Rs_sat)
+        pos, sat_lower, sat_upper = utils.findSurroundingElements(Rs, self.Rs_sat)
+        # print(pos, self.Rs_sat[sat_lower], self.Rs_sat[ sat_upper ], Rs)
+
         if (pos != pos.BETWEEN):
             raise LookupError("out of bounds and extrapolation not supported here")
+
         p_rel = p - self.computeSaturatedPressure_(sat_lower, sat_upper, Rs)
 
         # find undersaturated branches to interpolate between
-        pos, usat_lower, usat_upper = self.findSurroundingElements(Rs, self.Rs_usat)
+        pos, usat_lower, usat_upper = utils.findSurroundingElements(Rs, self.Rs_usat)
+        # print(pos, self.Rs_usat[usat_lower], self.Rs_usat[ usat_upper ], Rs)
         if (pos == Position.BETWEEN):
             # find usaturated relative pressures to get B values on
             # each of the under-saturated branches
-            pos1, i11, i12 = self.findSurroundingElements(p_rel, self.p_usat[usat_lower],
+            pos1, i11, i12 = utils.findSurroundingElements(p_rel, self.p_usat[usat_lower],
                                                           shift=self.p_usat[usat_lower][0])
-            pos2, i21, i22 = self.findSurroundingElements(p_rel, self.p_usat[usat_upper],
+            pos2, i21, i22 = utils.findSurroundingElements(p_rel, self.p_usat[usat_upper],
                                                           shift=self.p_usat[usat_upper][0])
             assert pos1 == Position.BETWEEN
             assert pos2 == Position.BETWEEN
@@ -228,6 +150,12 @@ class PVTOtable:
             self.B_usat.insert( 0, [ 1.0 ])
             self.mu_usat.insert( 0, [ mu_atm ])
             # NOTE: the second point will be extrapolated later
+        else:    # assign the first branch
+            # create usat branch;
+            self.Rs_usat.insert( 0, self.Rs_sat[0])
+            self.p_usat.insert( 0, [ self.p_bub[0] ])
+            self.B_usat.insert( 0, [ self.B_sat[0] ])
+            self.mu_usat.insert( 0, [ self.mu_sat[0] ])
 
     def readTable_(self, data):
         Rs_sat = []; Rs_usat = []; p_bub = [];
@@ -295,8 +223,8 @@ class PVTOtable:
                     p = self.p_usat[i]
                     B = self.B_usat[i]
                     mu = self.mu_usat[i]
-                    B_ext = interp_lin( p[-2], p[-1], B[-2], B[-1], p[0] + self.p_usat_rel_max)
-                    mu_ext = interp_lin( p[-2], p[-1], mu[-2], mu[-1], p[0] + self.p_usat_rel_max)
+                    B_ext = utils.interp_lin( p[-2], p[-1], B[-2], B[-1], p[0] + self.p_usat_rel_max)
+                    mu_ext = utils.interp_lin( p[-2], p[-1], mu[-2], mu[-1], p[0] + self.p_usat_rel_max)
                     p.append( p[0] + self.p_usat_rel_max )
                     B.append( B_ext )
                     mu.append( mu_ext )
@@ -337,9 +265,9 @@ class PVTOtable:
 
             # check for crossing of branches
             for j in range ( i+1, len(self.p_usat) ):
-                assert ( not curves_intersect(self.p_usat[i], self.p_usat[j],
+                assert ( not utils.curves_intersect(self.p_usat[i], self.p_usat[j],
                                               self.B_usat[i], self.B_usat[j]) ), \
                     "Volume factor under-saturated branches must not intersect"
-                assert ( not curves_intersect(self.p_usat[i], self.p_usat[j],
+                assert ( not utils.curves_intersect(self.p_usat[i], self.p_usat[j],
                                               self.mu_usat[i], self.mu_usat[j]) ), \
                     "Viscosity under-saturated branches must not intersect"
