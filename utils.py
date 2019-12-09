@@ -65,12 +65,12 @@ def curves_intersect(x1, x2, y1, y2):
     # and check all pairs for intersection
     for i in range(1, len(x1)):
         # build segment line y = a1 x + b1
-        assert(x1[i] != x1[i-1])
+        assert x1[i] != x1[i-1]
         a1 = (y1[i] - y1[i-1]) / (x1[i] - x1[i-1])
         b1 = y1[i] - a1 * x1[i]
         for j in range(1, len(x2)):
             # second line : y = a2 x + b2
-            assert(x2[j] != x2[j-1])
+            assert x2[j] != x2[j-1]
             a2 = (y2[j] - y2[j-1]) / (x2[j] - x2[j-1])
             b2 = y2[j] - a2 * x2[j]
 

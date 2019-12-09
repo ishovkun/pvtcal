@@ -43,8 +43,7 @@ class PVDGtable:
     def extrapolateToStandardConditions(self):
         # this interpolation gives a relatively good
         # extrapolation on SPE1
-        mu_atm = utils.interp_lin( self.p[0], self.p[1],
-                                   self.mu[0], self.mu[1], self.p_atm)
+        mu_atm = utils.interp_lin(self.p[0], self.p[1], self.mu[0], self.mu[1], self.p_atm)
         B_atm = 1.0
 
         assert mu_atm > 0, "linear extrapolation failed"

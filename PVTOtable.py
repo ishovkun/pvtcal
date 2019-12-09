@@ -257,7 +257,7 @@ class PVTOtable:
         for i in range(len(self.p_usat)):
             for j in range ( 1, len(self.p_usat[i]) ):
                 assert(self.p_usat[i][j] >= self.p_usat[i][j-1] ), \
-                    "Pressure must decrease in unsaturated region"
+                    "Pressure must increase in unsaturated region"
                 assert(self.B_usat[i][j] <= self.B_usat[i][j-1] ), \
                     "Volume facto must descrease with P in usat region"
                 assert(self.mu_usat[i][j] >= self.mu_usat[i][j-1] ), \
