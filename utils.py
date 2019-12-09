@@ -64,7 +64,7 @@ def binary_search_extr(value, array, l, h, shift):
     print(l,m,h)
     if (value > array[m] - shift):
         return binary_search_extr(value, array, m, h, shift)
-    elif (value < array[m]):
+    elif (value < array[m] - shift):
         return binary_search_extr(value, array, l, m, shift)
     else: #if ==
         if (array[h] - array[m] > array[m] - array[l]):
