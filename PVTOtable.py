@@ -54,57 +54,57 @@ class PVTOtable:
 
     def getProperty(self, Rs, p, sat_values, usat_values):
         # find lower and higher rs value indices
-        pos, sat_lower, sat_upper = utils.findSurroundingElements(Rs, self.Rs_sat)
+        # pos, sat_lower, sat_upper = utils.findSurroundingElements(Rs, self.Rs_sat)
+        # print(sat_lower, sat_upper)
+        # print(self.Rs_sat)
+        sat_lower, sat_upper = utils.binarySearchExtrapolationIndices(Rs, self.Rs_sat)
+        # exit(0)
         # print(pos, self.Rs_sat[sat_lower], self.Rs_sat[ sat_upper ], Rs)
 
-        if (pos != pos.BETWEEN):
-            raise LookupError("out of bounds and extrapolation not supported here")
+        # if (pos != pos.BETWEEN):
+        #     raise LookupError("out of bounds and extrapolation not supported here")
 
         p_rel = p - self.computeSaturatedPressure_(sat_lower, sat_upper, Rs)
 
         # find undersaturated branches to interpolate between
-        pos, usat_lower, usat_upper = utils.findSurroundingElements(Rs, self.Rs_usat)
+        usat_lower, usat_upper = utils.binarySearchExtrapolationIndices(Rs, self.Rs_usat)
         # print(pos, self.Rs_usat[usat_lower], self.Rs_usat[ usat_upper ], Rs)
-        if (pos == Position.BETWEEN):
-            # find usaturated relative pressures to get B values on
-            # each of the under-saturated branches
-            pos1, i11, i12 = utils.findSurroundingElements(p_rel, self.p_usat[usat_lower],
-                                                          shift=self.p_usat[usat_lower][0])
-            pos2, i21, i22 = utils.findSurroundingElements(p_rel, self.p_usat[usat_upper],
-                                                          shift=self.p_usat[usat_upper][0])
-            assert pos1 == Position.BETWEEN
-            assert pos2 == Position.BETWEEN
+        # if (pos == Position.BETWEEN):
+        # find usaturated relative pressures to get B values on
+        # each of the under-saturated branches
+        i11, i12 = utils.binarySearchExtrapolationIndices(p_rel, self.p_usat[usat_lower],
+                                                 shift=self.p_usat[usat_lower][0])
+        i21, i22 = utils.binarySearchExtrapolationIndices(p_rel, self.p_usat[usat_upper],
+                                                 shift=self.p_usat[usat_upper][0])
 
-            # interpolate on each usat branch to get two Bo values
-            usat_value1 = (usat_values[usat_lower][i12] - usat_values[usat_lower][i11]) / \
-                 (self.p_usat[usat_lower][i12] - self.p_usat[usat_lower][i11]) * \
-                 (p_rel - (self.p_usat[usat_lower][i11] - (self.p_usat[usat_lower][0]))) +\
-                 usat_values[usat_lower][i11]
+        # interpolate on each usat branch to get two Bo values
+        usat_value1 = (usat_values[usat_lower][i12] - usat_values[usat_lower][i11]) / \
+                (self.p_usat[usat_lower][i12] - self.p_usat[usat_lower][i11]) * \
+                (p_rel - (self.p_usat[usat_lower][i11] - (self.p_usat[usat_lower][0]))) +\
+                usat_values[usat_lower][i11]
 
-            usat_value2 = (usat_values[usat_upper][i22] - usat_values[usat_upper][i21]) / \
-                (self.p_usat[usat_upper][i22] - self.p_usat[usat_upper][i21]) * \
-                (p_rel - (self.p_usat[usat_upper][i21] - (self.p_usat[usat_upper][0]))) +\
-                usat_values[usat_upper][i21]
+        usat_value2 = (usat_values[usat_upper][i22] - usat_values[usat_upper][i21]) / \
+            (self.p_usat[usat_upper][i22] - self.p_usat[usat_upper][i21]) * \
+            (p_rel - (self.p_usat[usat_upper][i21] - (self.p_usat[usat_upper][0]))) +\
+            usat_values[usat_upper][i21]
 
-            # NOTE: we should interpolate B wrt Rs between branches since
-            # this causes bad interpolatiopn (trust me i checked)
-            # B = (B2 - B1) / (self.Rs_usat[usat_upper] - self.Rs_usat[usat_lower]) * \
-            #     (Rs - self.Rs_usat[usat_lower]) + B1
+        # NOTE: we should interpolate B wrt Rs between branches since
+        # this causes bad interpolatiopn (trust me i checked)
+        # B = (B2 - B1) / (self.Rs_usat[usat_upper] - self.Rs_usat[usat_lower]) * \
+        #     (Rs - self.Rs_usat[usat_lower]) + B1
 
-            # that's why we interpolate along the saturated B curve
-            # first interpolate B_sat
-            sat_value = (sat_values[sat_upper] - sat_values[sat_lower]) / \
-                    (self.Rs_sat[sat_upper] - self.Rs_sat[sat_lower]) * \
-                    (Rs - self.Rs_sat[sat_lower]) + sat_values[sat_lower]
+        # that's why we interpolate along the saturated B curve
+        # first interpolate B_sat
+        sat_value = (sat_values[sat_upper] - sat_values[sat_lower]) / \
+                (self.Rs_sat[sat_upper] - self.Rs_sat[sat_lower]) * \
+                (Rs - self.Rs_sat[sat_lower]) + sat_values[sat_lower]
 
-            # use B_sat as x in interpolation
-            usat_value = (usat_value2 - usat_value1) / \
-                (usat_values[usat_upper][0] - usat_values[usat_lower][0]) * \
-                (sat_value - usat_values[usat_lower][0]) + usat_value1
+        # use B_sat as x in interpolation
+        usat_value = (usat_value2 - usat_value1) / \
+            (usat_values[usat_upper][0] - usat_values[usat_lower][0]) * \
+            (sat_value - usat_values[usat_lower][0]) + usat_value1
 
-            return usat_value
-        else:
-            raise LookupError("extrapolation not allowed")
+        return usat_value
 
     def getViscosity(self, Rs, p):
         return self.getProperty(Rs, p, self.mu_sat, self.mu_usat)

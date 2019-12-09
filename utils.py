@@ -29,6 +29,58 @@ class Position(Enum):
     ABOVE = 2
     BELOW = 3
 
+
+def binary_search(value, array, l, h):
+    '''
+    regular binary search
+    '''
+    if (h - l == 1):
+        if (value == array[h]):
+            return h
+        elif (value == array[l]):
+            return l
+        else:
+            raise KeyError("element not found")
+
+    m = int((h - l) / 2)
+    print(m, array[m])
+    if (value > array[m]):
+        return binary_search(value, array, m, h)
+    elif (value < array[m]):
+        return binary_search(value, array, l, m)
+    else: #if ==
+        return m
+
+def binary_search_extr(value, array, l, h, shift):
+    '''
+    a version of binary search that provides two
+    closest indices for interpolation/extrapolation
+    Complexity: O(log(size(array)))
+    '''
+    if (h - l == 1):
+        return l, h
+
+    m = int(l + (h - l) / 2)
+    print(l,m,h)
+    if (value > array[m] - shift):
+        return binary_search_extr(value, array, m, h, shift)
+    elif (value < array[m]):
+        return binary_search_extr(value, array, l, m, shift)
+    else: #if ==
+        if (array[h] - array[m] > array[m] - array[l]):
+            return l, m
+        else: return m, h
+
+def binarySearchExtrapolationIndices(value, array, shift = 0):
+    '''
+    value is a single value (float)
+    find surrounding undersaturated branches
+    shift is to search relative pressure
+    Complexity: O(log(size(array)))
+    '''
+    assert sorted(array), "Array is not sorted"
+    return binary_search_extr(value, array, 0, len(array)-1, shift)
+
 def findSurroundingElements(value, array, shift = 0):
     """
     value is a single value (float)
